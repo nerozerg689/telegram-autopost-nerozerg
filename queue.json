@@ -1,10 +1,12 @@
 [
-   {
+  {
     "id": "test",
     "when": "2026-10-23T23:05",
     "photo": "images/2026-10-28-prompt.png",
     "text_file": "posts/2026-10-28-prompt.html",
-    "status": "pending"
+    "status": "sent",
+    "sent_at": "2026-10-23T23:19:03+02:00",
+    "message_id": 47
   },
   {
     "id": "2026-10-28-prompt-of-the-day",
