@@ -13,7 +13,9 @@
     "when": "2026-10-26T19:00",
     "media": "https://static.metricool.com/planner/202610/7602080-file-12892257834749110441.png",
     "text": "📰 <b>Новости недели: главное в мире ИИ</b>\n\n1️⃣ Microsoft следит за ИИ-агентами: Guardian Agents контролируют их внутри компаний. <a href=\"https://www.techradar.com/pro/security/microsoft-admits-frontier-models-cant-be-trusted-unveils-new-security-tools-to-treat-ai-agents-as-insider-threats\">TechRadar</a>\n\n2️⃣ ИИ нашёл дыры в PHP, и госорганы Европы временно отключали сайты. <a href=\"https://www.clickondetroit.com/business/2026/10/21/some-websites-go-dark-as-operators-address-an-ai-detected-flaw-in-a-web-programming-language/\">AP</a>\n\n3️⃣ OpenAI укрепила защиту сред для обучения моделей. <a href=\"https://openai.com/index/securing-our-frontier-model-training-environment/\">OpenAI</a>\n\n#нейросети #новостиИИ",
-    "status": "pending"
+    "status": "sent",
+    "sent_at": "2026-10-26T19:35:35+01:00",
+    "message_id": 53
   },
   {
     "id": "2026-10-27-daily",
