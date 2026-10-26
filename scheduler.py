@@ -10,6 +10,8 @@
   text или text_file (HTML для Telegram),
   media: ссылка (https://...) или путь к файлу в репозитории (необязательно),
   media_type: "photo" или "video" (если не указан, определяется по расширению).
+  album: список ссылок на картинки (альбом до 10 штук); подпись берётся из text.
+  followup_text: отдельное сообщение, которое уходит сразу после поста (необязательно).
 
 Проверка без отправки:
   python3 scheduler.py --dry-run
@@ -21,11 +23,13 @@ import mimetypes
 import os
 import sys
 import tempfile
+import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from tg_post import CAPTION_LIMIT, MESSAGE_LIMIT, call
+from tg_post import API, CAPTION_LIMIT, MESSAGE_LIMIT, call
 
 TZ = ZoneInfo("Europe/Berlin")  # время во Франкфурте
 MAX_LATE = timedelta(hours=24)
@@ -61,7 +65,89 @@ def local_copy(media):
     return path, True
 
 
+def call_multi(token, method, fields, files):
+    """Запрос с несколькими файлами (multipart). files: {имя_поля: путь}."""
+    boundary = uuid.uuid4().hex
+    body = bytearray()
+    for key, value in fields.items():
+        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n').encode()
+    for name, path in files.items():
+        ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        with open(path, "rb") as f:
+            data = f.read()
+        body += (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
+            f'filename="{os.path.basename(path)}"\r\nContent-Type: {ctype}\r\n\r\n'
+        ).encode()
+        body += data + b"\r\n"
+    body += f"--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        API.format(token=token, method=method),
+        data=bytes(body),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as e:
+        try:
+            return json.load(e)
+        except Exception:
+            return {"ok": False, "description": f"HTTP {e.code}"}
+    except urllib.error.URLError as e:
+        return {"ok": False, "description": f"Нет соединения: {e.reason}"}
+
+
+def send_album(token, chat_id, post):
+    """Альбом из картинок: сначала по ссылкам, при неудаче скачиваем и грузим файлами."""
+    urls = post["album"]
+    caption = get_text(post)
+    items = []
+    for i, m in enumerate(urls):
+        item = {"type": "photo", "media": m}
+        if i == 0:
+            item.update(caption=caption, parse_mode="HTML")
+        items.append(item)
+    res = call(token, "sendMediaGroup", {"chat_id": chat_id, "media": items})
+    if res.get("ok"):
+        return res
+
+    tmp, files, items2 = [], {}, []
+    try:
+        for i, m in enumerate(urls):
+            path, is_tmp = local_copy(m)
+            if is_tmp:
+                tmp.append(path)
+            files[f"file{i}"] = path
+            item = {"type": "photo", "media": f"attach://file{i}"}
+            if i == 0:
+                item.update(caption=caption, parse_mode="HTML")
+            items2.append(item)
+        return call_multi(token, "sendMediaGroup",
+                          {"chat_id": chat_id, "media": json.dumps(items2, ensure_ascii=False)}, files)
+    except Exception as e:
+        return {"ok": False, "description": f"Альбом не отправлен: {res.get('description')}; запасной способ: {e}"}
+    finally:
+        for p in tmp:
+            if os.path.exists(p):
+                os.remove(p)
+
+
+def first_message_id(res):
+    r = res["result"]
+    return r[0]["message_id"] if isinstance(r, list) else r["message_id"]
+
+
 def send(token, chat_id, post):
+    if post.get("album"):
+        res = send_album(token, chat_id, post)
+        if res.get("ok") and post.get("followup_text"):
+            extra = call(token, "sendMessage", {"chat_id": chat_id, "parse_mode": "HTML", "text": post["followup_text"].strip()})
+            if not extra.get("ok"):
+                post["followup_error"] = extra.get("description", str(extra))
+                print(f"[внимание] {post['id']}: альбом отправлен, но второе сообщение нет: {post['followup_error']}", file=sys.stderr)
+        return res
+
     text = get_text(post)
     media = post.get("media")
     base = {"chat_id": chat_id, "parse_mode": "HTML"}
@@ -150,7 +236,7 @@ def main():
             if res.get("ok"):
                 post["status"] = "sent"
                 post["sent_at"] = now.isoformat(timespec="seconds")
-                post["message_id"] = res["result"]["message_id"]
+                post["message_id"] = first_message_id(res)
                 post.pop("last_error", None)
                 print(f"[отправлен] {post['id']}, message_id={post['message_id']}")
             else:
