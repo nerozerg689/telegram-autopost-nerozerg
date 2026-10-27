@@ -1,7 +1,14 @@
 [
   {
-    "id": "2026-11-04-carousel",
+    "id": "2026-11-04-tool-of-the-day",
     "when": "2026-11-04T19:00",
+    "media": "https://static.metricool.com/planner/202610/7602080-file-8688506056438615336.png",
+    "text": "🛠 <b>Инструмент дня: Kling AI</b>\n\nНейросеть, которая оживляет картинки и делает ролики по описанию. Идеально, если хочешь превратить свой кадр в Reels.\n\nИсточники: <a href=\"https://imagine.art/blogs/best-ai-video-generators\">ImagineArt</a>, <a href=\"https://datanorth.ai/blog/top-10-ai-video-generators-in-2026\">DataNorth</a>\n\n#инструментдня #нейросети #нейровидео",
+    "status": "pending"
+  },
+  {
+    "id": "2026-11-11-carousel",
+    "when": "2026-11-11T19:00",
     "album": [
       "https://static.metricool.com/planner/202610/7602080-file-10869950508114010823.png",
       "https://static.metricool.com/planner/202610/7602080-file-2839527122393849635.png",
