@@ -13,6 +13,8 @@
     "when": "2026-10-28T19:00",
     "photo": "images/2026-10-28-prompt.png",
     "text_file": "posts/2026-10-28-prompt.html",
-    "status": "pending"
+    "status": "sent",
+    "sent_at": "2026-10-28T19:37:25+01:00",
+    "message_id": 58
   }
 ]
