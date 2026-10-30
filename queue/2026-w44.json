@@ -40,7 +40,9 @@
     "when": "2026-10-30T19:00",
     "media": "https://static.metricool.com/planner/202610/7602080-file-16464799337072755954.mp4",
     "text": "🎞 Пятничное видео для настроения. Что бы вы добавили в этот кадр?\n\n#нейровидео #aivideo #aiart #нейросеть",
-    "status": "pending"
+    "status": "sent",
+    "sent_at": "2026-10-30T19:37:10+01:00",
+    "message_id": 63
   },
   {
     "id": "2026-10-31-daily",
