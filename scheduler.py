@@ -13,6 +13,7 @@
   album: список ссылок на картинки (альбом до 10 штук); подпись берётся из text.
   followup_text: отдельное сообщение, которое уходит сразу после поста (необязательно).
 
+Ручной запуск в GitHub (Run workflow) всегда присылает отчёт, это удобно для проверки.
 Отчёты: если задан секрет TELEGRAM_ADMIN_CHAT_ID, скрипт присылает в личные сообщения
 короткий отчёт (отправлено, ошибка, пропущено, на сегодня нет поста).
 
@@ -231,6 +232,8 @@ def main():
     events = []
     today = f"{now:%Y-%m-%d}"
     posts_today = 0
+    upcoming = []
+    manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
 
     try:
         for path in queue_files():
@@ -244,6 +247,7 @@ def main():
                     continue
                 when = datetime.fromisoformat(post["when"]).replace(tzinfo=TZ)
                 if when > now:
+                    upcoming.append(post["when"])
                     continue
 
                 if now - when > MAX_LATE:
@@ -256,6 +260,7 @@ def main():
 
                 if args.dry_run:
                     print(f"[отправил бы] {post['id']} ({post['when']}) из {path}")
+                    events.append(f"ℹ️ Проверка: отправил бы {post['id']}")
                     continue
 
                 res = send(token, chat_id, post)
@@ -284,7 +289,14 @@ def main():
         failed = True
         print(f"[сбой] {e}", file=sys.stderr)
 
-    if not args.dry_run:
+    if manual:
+        mode = " (проверка dry_run)" if args.dry_run else ""
+        if upcoming:
+            events.append(f"ℹ️ Ручной запуск{mode} прошёл. Ждут своего времени: {len(upcoming)}, ближайший: {min(upcoming)}")
+        else:
+            events.append(f"ℹ️ Ручной запуск{mode} прошёл. Будущих постов в очереди нет.")
+
+    if not args.dry_run or manual:
         notify(token, admin_chat, events)
 
     if failed:
