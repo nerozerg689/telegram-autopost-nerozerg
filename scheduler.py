@@ -13,6 +13,9 @@
   album: список ссылок на картинки (альбом до 10 штук); подпись берётся из text.
   followup_text: отдельное сообщение, которое уходит сразу после поста (необязательно).
 
+Отчёты: если задан секрет TELEGRAM_ADMIN_CHAT_ID, скрипт присылает в личные сообщения
+короткий отчёт (отправлено, ошибка, пропущено, на сегодня нет поста).
+
 Проверка без отправки:
   python3 scheduler.py --dry-run
 """
@@ -33,6 +36,7 @@ from tg_post import API, CAPTION_LIMIT, MESSAGE_LIMIT, call
 
 TZ = ZoneInfo("Europe/Berlin")  # время во Франкфурте
 MAX_LATE = timedelta(hours=24)
+MORNING_HOUR = 10  # в этот час (по Франкфурту) проверяем, есть ли пост на сегодня
 VIDEO_EXT = (".mp4", ".mov", ".m4v", ".webm")
 
 
@@ -192,6 +196,19 @@ def save(path, queue):
         f.write("\n")
 
 
+def notify(token, admin_chat, events):
+    """Короткий отчёт в личные сообщения. Ошибки отправки отчёта не фатальны."""
+    if not (token and admin_chat and events):
+        return
+    res = call(token, "sendMessage", {
+        "chat_id": admin_chat,
+        "text": "Автопубликация\n\n" + "\n".join(events),
+        "disable_web_page_preview": True,
+    })
+    if not res.get("ok"):
+        print(f"[отчёт не отправлен] {res.get('description')}", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="ничего не отправлять")
@@ -200,6 +217,7 @@ def main():
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    admin_chat = os.environ.get("TELEGRAM_ADMIN_CHAT_ID")
     if not args.dry_run and (not token or not chat_id):
         print("Не заданы TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID.", file=sys.stderr)
         sys.exit(1)
@@ -210,40 +228,64 @@ def main():
     print(f"Сейчас: {now:%Y-%m-%d %H:%M} (Europe/Berlin)")
 
     failed = False
-    for path in queue_files():
-        with open(path, encoding="utf-8") as f:
-            queue = json.load(f)
+    events = []
+    today = f"{now:%Y-%m-%d}"
+    posts_today = 0
 
-        for post in queue:
-            if post.get("status", "pending") != "pending":
-                continue
-            when = datetime.fromisoformat(post["when"]).replace(tzinfo=TZ)
-            if when > now:
-                continue
+    try:
+        for path in queue_files():
+            with open(path, encoding="utf-8") as f:
+                queue = json.load(f)
 
-            if now - when > MAX_LATE:
-                print(f"[пропущен] {post['id']}: опоздал больше чем на сутки")
-                if not args.dry_run:
-                    post["status"] = "missed"
-                    save(path, queue)
-                continue
+            for post in queue:
+                if post["when"][:10] == today:
+                    posts_today += 1
+                if post.get("status", "pending") != "pending":
+                    continue
+                when = datetime.fromisoformat(post["when"]).replace(tzinfo=TZ)
+                if when > now:
+                    continue
 
-            if args.dry_run:
-                print(f"[отправил бы] {post['id']} ({post['when']}) из {path}")
-                continue
+                if now - when > MAX_LATE:
+                    print(f"[пропущен] {post['id']}: опоздал больше чем на сутки")
+                    if not args.dry_run:
+                        post["status"] = "missed"
+                        save(path, queue)
+                        events.append(f"⚠️ Пропущен (опоздал больше суток): {post['id']}")
+                    continue
 
-            res = send(token, chat_id, post)
-            if res.get("ok"):
-                post["status"] = "sent"
-                post["sent_at"] = now.isoformat(timespec="seconds")
-                post["message_id"] = first_message_id(res)
-                post.pop("last_error", None)
-                print(f"[отправлен] {post['id']}, message_id={post['message_id']}")
-            else:
-                post["last_error"] = res.get("description", str(res))
-                print(f"[ошибка] {post['id']}: {post['last_error']}", file=sys.stderr)
-                failed = True
-            save(path, queue)  # сразу, чтобы не отправить дважды
+                if args.dry_run:
+                    print(f"[отправил бы] {post['id']} ({post['when']}) из {path}")
+                    continue
+
+                res = send(token, chat_id, post)
+                if res.get("ok"):
+                    post["status"] = "sent"
+                    post["sent_at"] = now.isoformat(timespec="seconds")
+                    post["message_id"] = first_message_id(res)
+                    post.pop("last_error", None)
+                    print(f"[отправлен] {post['id']}, message_id={post['message_id']}")
+                    events.append(f"✅ Отправлено: {post['id']}")
+                    if post.get("followup_error"):
+                        events.append(f"⚠️ {post['id']}: второе сообщение не ушло ({post['followup_error']})")
+                else:
+                    post["last_error"] = res.get("description", str(res))
+                    print(f"[ошибка] {post['id']}: {post['last_error']}", file=sys.stderr)
+                    events.append(f"❌ Ошибка: {post['id']}: {post['last_error']}")
+                    failed = True
+                save(path, queue)  # сразу, чтобы не отправить дважды
+
+        # утренняя проверка: есть ли в очереди пост на сегодня
+        if now.hour == MORNING_HOUR and posts_today == 0 and not args.dry_run:
+            events.append(f"⚠️ На сегодня ({today}) в очереди нет ни одного поста для Telegram. "
+                          "Загрузи файл очереди в репозиторий до времени публикации.")
+    except Exception as e:  # неожиданный сбой: сообщаем и падаем
+        events.append(f"❌ Скрипт упал: {e}")
+        failed = True
+        print(f"[сбой] {e}", file=sys.stderr)
+
+    if not args.dry_run:
+        notify(token, admin_chat, events)
 
     if failed:
         sys.exit(1)
